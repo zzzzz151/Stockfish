@@ -518,37 +518,19 @@ namespace Stockfish::Tools
 
     static bool is_convert_of_type(
         const std::string& input_path,
-        const std::string& output_path,
-        const std::string& expected_input_extension,
-        const std::string& expected_output_extension)
+        std::size_t positionsToConvert)
     {
-        return ends_with(input_path, expected_input_extension)
-            && ends_with(output_path, expected_output_extension);
+        return true;
     }
 
-    using ConvertFunctionType = void(std::string inputPath, std::string outputPath, std::ios_base::openmode om, bool validate);
+    using ConvertFunctionType = void(std::string inputPath, std::size_t positionsToConvert);
 
-    static ConvertFunctionType* get_convert_function(const std::string& input_path, const std::string& output_path)
+    static ConvertFunctionType* get_convert_function(const std::string& input_path, std::size_t positionsToConvert)
     {
-        if (is_convert_of_type(input_path, output_path, plain_extension, bin_extension))
-            return binpack::convertPlainToBin;
-        if (is_convert_of_type(input_path, output_path, plain_extension, binpack_extension))
-            return binpack::convertPlainToBinpack;
-
-        if (is_convert_of_type(input_path, output_path, bin_extension, plain_extension))
-            return binpack::convertBinToPlain;
-        if (is_convert_of_type(input_path, output_path, bin_extension, binpack_extension))
-            return binpack::convertBinToBinpack;
-
-        if (is_convert_of_type(input_path, output_path, binpack_extension, plain_extension))
-            return binpack::convertBinpackToPlain;
-        if (is_convert_of_type(input_path, output_path, binpack_extension, bin_extension))
-            return binpack::convertBinpackToBin;
-
-        return nullptr;
+        return binpack::convertBinpackToBin;
     }
 
-    static void convert(const std::string& input_path, const std::string& output_path, std::ios_base::openmode om, bool validate)
+    static void convert(const std::string& input_path, std::size_t positionsToConvert)
     {
         if(!file_exists(input_path))
         {
@@ -556,26 +538,11 @@ namespace Stockfish::Tools
             return;
         }
 
-        auto func = get_convert_function(input_path, output_path);
-        if (func != nullptr)
-        {
-            func(input_path, output_path, om, validate);
-        }
-        else
-        {
-            std::cerr << "Conversion between files of these types is not supported.\n";
-        }
+        binpack::convertBinpackToBin(input_path, positionsToConvert);
     }
 
     static void convert(const std::vector<std::string>& args)
     {
-        if (args.size() < 2 || args.size() > 4)
-        {
-            std::cerr << "Invalid arguments.\n";
-            std::cerr << "Usage: convert from_path to_path [append] [validate]\n";
-            return;
-        }
-
         const bool append = std::find(args.begin() + 2, args.end(), "append") != args.end();
         const bool validate = std::find(args.begin() + 2, args.end(), "validate") != args.end();
 
@@ -584,7 +551,7 @@ namespace Stockfish::Tools
             ? std::ios_base::app
             : std::ios_base::trunc;
 
-        convert(args[0], args[1], openmode, validate);
+        convert(args[0], stoll(args[1]));
     }
 
     void convert(istringstream& is)

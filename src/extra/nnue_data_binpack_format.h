@@ -34,6 +34,21 @@
 #include <limits>
 #include <climits>
 #include <optional>
+#include <cstdint>
+#include <bit>
+#include <sstream>
+#include <bitset>
+#include <limits>
+
+using u8 = uint8_t;
+using u16 = uint16_t;
+using u32 = uint32_t;
+using u64 = uint64_t;
+using u128 = unsigned __int128;
+using i8 = int8_t;
+using i16 = int16_t;
+using i32 = int32_t;
+using i64 = int64_t;
 
 #if (defined(_MSC_VER) || defined(__INTEL_COMPILER)) && !defined(__clang__)
 #include <intrin.h>
@@ -7519,359 +7534,125 @@ namespace binpack
         }
     };
 
-    inline void emitPlainEntry(std::string& buffer, const TrainingDataEntry& plain)
+    struct MyDataEntry {
+        public:
+
+        bool whiteToMove;
+        u64 occupancy;
+
+        // 4 bits per piece for a max of 32 pieces
+        // lsb is isWhitePiece
+        u128 pieces;
+
+        u8 ourKingSquare, theirKingSquare;
+
+        i16 stmScore;
+        i8 stmResult; // -1 = stm lost, 0 = draw, 1 = stm won
+
+        std::array<u8, 2> extra = {0, 0}; // padding to ensure 32 bytes
+
+    } __attribute__((packed));
+
+    static_assert(sizeof(MyDataEntry) == 32); // 32 bytes
+
+    inline u8 poplsb(u64 &bitboard)
     {
-        buffer += "fen ";
-        buffer += plain.pos.fen();
-        buffer += '\n';
-
-        buffer += "move ";
-        buffer += chess::uci::moveToUci(plain.pos, plain.move);
-        buffer += '\n';
-
-        buffer += "score ";
-        buffer += std::to_string(plain.score);
-        buffer += '\n';
-
-        buffer += "ply ";
-        buffer += std::to_string(plain.ply);
-        buffer += '\n';
-
-        buffer += "result ";
-        buffer += std::to_string(plain.result);
-        buffer += "\ne\n";
+        auto idx = chess::intrin::lsb(bitboard);
+        bitboard &= bitboard - 1; // compiler optimizes this to _blsr_u64
+        return idx;
     }
 
-    inline void emitBinEntry(std::vector<char>& buffer, const TrainingDataEntry& plain)
+    inline void convertBinpackToBin(std::string inputPath, std::size_t positionsToConvert)
     {
-        auto psv = trainingDataEntryToPackedSfenValue(plain);
-        const char* data = reinterpret_cast<const char*>(&psv);
-        buffer.insert(buffer.end(), data, data+sizeof(psv));
-    }
-
-    inline void convertPlainToBinpack(std::string inputPath, std::string outputPath, std::ios_base::openmode om, bool validate)
-    {
-        constexpr std::size_t reportEveryNPositions = 100'000;
-
-        std::cout << "Converting " << inputPath << " to " << outputPath << '\n';
-
-        CompressedTrainingDataEntryWriter writer(outputPath, om);
-        TrainingDataEntry e;
-
-        std::string key;
-        std::string value;
-        std::string move;
-
-        std::ifstream inputFile(inputPath);
-        const auto base = inputFile.tellg();
-        std::size_t numProcessedPositions = 0;
-
-        for(;;)
-        {
-            inputFile >> key;
-            if (!inputFile)
-            {
-                break;
-            }
-
-            if (key == "e"sv)
-            {
-                e.move = chess::uci::uciToMove(e.pos, move);
-                if (validate && !e.isValid())
-                {
-                    std::cerr << "Illegal move " << chess::uci::moveToUci(e.pos, e.move) << " for position " << e.pos.fen() << '\n';
-                    return;
-                }
-
-                writer.addTrainingDataEntry(e);
-
-                ++numProcessedPositions;
-                const auto cur = inputFile.tellg();
-                if (numProcessedPositions % reportEveryNPositions == 0)
-                {
-                    std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-                }
-
-                continue;
-            }
-
-            inputFile >> std::ws;
-            std::getline(inputFile, value, '\n');
-
-            if (key == "fen"sv) e.pos = chess::Position::fromFen(value.c_str());
-            if (key == "move"sv) move = value;
-            if (key == "score"sv) e.score = std::stoi(value);
-            if (key == "ply"sv) e.ply = std::stoi(value);
-            if (key == "result"sv) e.result = std::stoi(value);
-        }
-
-        std::cout << "Finished. Converted " << numProcessedPositions << " positions.\n";
-    }
-
-    inline void convertBinpackToPlain(std::string inputPath, std::string outputPath, std::ios_base::openmode om, bool validate)
-    {
-        constexpr std::size_t bufferSize = MiB;
-
-        std::cout << "Converting " << inputPath << " to " << outputPath << '\n';
+        std::cout << "convertBinpackToBin(): converting " << positionsToConvert << " from " << inputPath << " to data.bin" << std::endl;
 
         CompressedTrainingDataEntryReader reader(inputPath);
-        std::ofstream outputFile(outputPath, om);
-        const auto base = outputFile.tellp();
+
+        std::ofstream outputFile("data.bin", std::ios::binary);
+        assert(outputFile && outputFile.is_open());
+
+        MyDataEntry dataEntry;
         std::size_t numProcessedPositions = 0;
-        std::string buffer;
-        buffer.reserve(bufferSize * 2);
 
         while(reader.hasNext())
         {
             auto e = reader.next();
-            if (validate && !e.isValid())
-            {
-                std::cerr << "Illegal move " << chess::uci::moveToUci(e.pos, e.move) << " for position " << e.pos.fen() << '\n';
+
+            if (!e.isValid()) {
+                std::cerr << "Illegal move " << chess::uci::moveToUci(e.pos, e.move) << " for position " << e.pos.fen() << std::endl;
                 return;
             }
 
-            emitPlainEntry(buffer, e);
+            dataEntry.occupancy = e.pos.piecesBB().bits();
+            assert(chess::intrin::popcount(dataEntry.occupancy) >= 2 && chess::intrin::popcount(dataEntry.occupancy) <= 32);
 
-            ++numProcessedPositions;
+            int numKnightsBishops 
+                = e.pos.pieceCount(chess::Piece(chess::PieceType::Knight, chess::Color::White))
+                + e.pos.pieceCount(chess::Piece(chess::PieceType::Knight, chess::Color::Black))
+                + e.pos.pieceCount(chess::Piece(chess::PieceType::Bishop, chess::Color::White))
+                + e.pos.pieceCount(chess::Piece(chess::PieceType::Bishop, chess::Color::Black));
 
-            if (buffer.size() > bufferSize)
-            {
-                outputFile << buffer;
-                buffer.clear();
-
-                const auto cur = outputFile.tellp();
-                std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-            }
-        }
-
-        if (!buffer.empty())
-        {
-            outputFile << buffer;
-
-            const auto cur = outputFile.tellp();
-            std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-        }
-
-        std::cout << "Finished. Converted " << numProcessedPositions << " positions.\n";
-    }
-
-
-    inline void convertBinToBinpack(std::string inputPath, std::string outputPath, std::ios_base::openmode om, bool validate)
-    {
-        constexpr std::size_t reportEveryNPositions = 100'000;
-
-        std::cout << "Converting " << inputPath << " to " << outputPath << '\n';
-
-        CompressedTrainingDataEntryWriter writer(outputPath, om);
-
-        std::ifstream inputFile(inputPath, std::ios_base::binary);
-        const auto base = inputFile.tellg();
-        std::size_t numProcessedPositions = 0;
-
-        nodchip::PackedSfenValue psv;
-        for(;;)
-        {
-            inputFile.read(reinterpret_cast<char*>(&psv), sizeof(psv));
-            if (inputFile.gcount() != 40)
-            {
-                break;
-            }
-
-            auto e = packedSfenValueToTrainingDataEntry(psv);
-            if (validate && !e.isValid())
-            {
-                std::cerr << "Illegal move " << chess::uci::moveToUci(e.pos, e.move) << " for position " << e.pos.fen() << '\n';
-                std::cerr << static_cast<int>(e.move.type) << '\n';
-                return;
-            }
-
-            writer.addTrainingDataEntry(e);
-
-            ++numProcessedPositions;
-            const auto cur = inputFile.tellg();
-            if (numProcessedPositions % reportEveryNPositions == 0)
-            {
-                std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-            }
-        }
-
-        std::cout << "Finished. Converted " << numProcessedPositions << " positions.\n";
-    }
-
-    inline void convertBinpackToBin(std::string inputPath, std::string outputPath, std::ios_base::openmode om, bool validate)
-    {
-        constexpr std::size_t bufferSize = MiB;
-
-        std::cout << "Converting " << inputPath << " to " << outputPath << '\n';
-
-        CompressedTrainingDataEntryReader reader(inputPath);
-        std::ofstream outputFile(outputPath, std::ios_base::binary | om);
-        const auto base = outputFile.tellp();
-        std::size_t numProcessedPositions = 0;
-        std::vector<char> buffer;
-        buffer.reserve(bufferSize * 2);
-
-        while(reader.hasNext())
-        {
-            auto e = reader.next();
-            if (validate && !e.isValid())
-            {
-                std::cerr << "Illegal move " << chess::uci::moveToUci(e.pos, e.move) << " for position " << e.pos.fen() << '\n';
-                return;
-            }
-
-            emitBinEntry(buffer, e);
-
-            ++numProcessedPositions;
-
-            if (buffer.size() > bufferSize)
-            {
-                outputFile.write(buffer.data(), buffer.size());
-                buffer.clear();
-
-                const auto cur = outputFile.tellp();
-                std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-            }
-        }
-
-        if (!buffer.empty())
-        {
-            outputFile.write(buffer.data(), buffer.size());
-
-            const auto cur = outputFile.tellp();
-            std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-        }
-
-        std::cout << "Finished. Converted " << numProcessedPositions << " positions.\n";
-    }
-
-    inline void convertBinToPlain(std::string inputPath, std::string outputPath, std::ios_base::openmode om, bool validate)
-    {
-        constexpr std::size_t bufferSize = MiB;
-
-        std::cout << "Converting " << inputPath << " to " << outputPath << '\n';
-
-        std::ifstream inputFile(inputPath, std::ios_base::binary);
-        const auto base = inputFile.tellg();
-        std::size_t numProcessedPositions = 0;
-
-        std::ofstream outputFile(outputPath, om);
-        std::string buffer;
-        buffer.reserve(bufferSize * 2);
-
-        nodchip::PackedSfenValue psv;
-        for(;;)
-        {
-            inputFile.read(reinterpret_cast<char*>(&psv), sizeof(psv));
-            if (inputFile.gcount() != 40)
-            {
-                break;
-            }
-
-            auto e = packedSfenValueToTrainingDataEntry(psv);
-            if (validate && !e.isValid())
-            {
-                std::cerr << "Illegal move " << chess::uci::moveToUci(e.pos, e.move) << " for position " << e.pos.fen() << '\n';
-                return;
-            }
-
-            emitPlainEntry(buffer, e);
-
-            ++numProcessedPositions;
-
-            if (buffer.size() > bufferSize)
-            {
-                outputFile << buffer;
-                buffer.clear();
-
-                const auto cur = outputFile.tellp();
-                std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-            }
-        }
-
-        if (!buffer.empty())
-        {
-            outputFile << buffer;
-
-            const auto cur = outputFile.tellp();
-            std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-        }
-
-        std::cout << "Finished. Converted " << numProcessedPositions << " positions.\n";
-    }
-
-    inline void convertPlainToBin(std::string inputPath, std::string outputPath, std::ios_base::openmode om, bool validate)
-    {
-        constexpr std::size_t bufferSize = MiB;
-
-        std::cout << "Converting " << inputPath << " to " << outputPath << '\n';
-
-        std::ofstream outputFile(outputPath, std::ios_base::binary | om);
-        std::vector<char> buffer;
-        buffer.reserve(bufferSize * 2);
-
-        TrainingDataEntry e;
-
-        std::string key;
-        std::string value;
-        std::string move;
-
-        std::ifstream inputFile(inputPath);
-        const auto base = inputFile.tellg();
-        std::size_t numProcessedPositions = 0;
-
-        for(;;)
-        {
-            inputFile >> key;
-            if (!inputFile)
-            {
-                break;
-            }
-
-            if (key == "e"sv)
-            {
-                e.move = chess::uci::uciToMove(e.pos, move);
-                if (validate && !e.isValid())
-                {
-                    std::cerr << "Illegal move " << chess::uci::moveToUci(e.pos, e.move) << " for position " << e.pos.fen() << '\n';
-                    return;
-                }
-
-                emitBinEntry(buffer, e);
-
-                ++numProcessedPositions;
-
-                if (buffer.size() > bufferSize)
-                {
-                    outputFile.write(buffer.data(), buffer.size());
-                    buffer.clear();
-
-                    const auto cur = outputFile.tellp();
-                    std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-                }
-
+            if (e.ply <= (numProcessedPositions % 2 == 0 ? 16 : 17)
+            || abs(e.score) > 8000
+            || e.isInCheck()
+            || e.isCapturingMove()
+            || e.pos.isPromotion(e.move.from, e.move.to)
+            || e.pos.rule50Counter() >= 50
+            || chess::intrin::popcount(dataEntry.occupancy) == 2
+            || (chess::intrin::popcount(dataEntry.occupancy) == 3 && numKnightsBishops > 0))
                 continue;
+
+            chess::Color stm = e.pos.sideToMove();
+            chess::Color nstm = stm == chess::Color::White ? chess::Color::Black : chess::Color::White;
+
+            dataEntry.whiteToMove = stm == chess::Color::White;
+
+            dataEntry.stmScore = e.score;
+            dataEntry.stmResult = e.result; // -1 = stm lost, 0 = draw, 1 = stm won
+
+            dataEntry.ourKingSquare = int(e.pos.kingSquare(stm));
+            dataEntry.theirKingSquare = int(e.pos.kingSquare(nstm));
+
+            assert(dataEntry.stmResult == -1 || dataEntry.stmResult == 0 || dataEntry.stmResult == 1);
+            assert(dataEntry.ourKingSquare >= 0 && dataEntry.ourKingSquare <= 63);
+            assert(dataEntry.theirKingSquare >= 0 && dataEntry.theirKingSquare <= 63);
+
+            dataEntry.pieces = 0;
+            u64 occ = dataEntry.occupancy;
+            int piecesSeen = 0;
+
+            while (occ > 0) {
+                u8 sq = poplsb(occ);
+                chess::Piece piece = e.pos.pieceAt(chess::Square(sq));
+
+                u128 fourBitsPiece = piece.color() == chess::Color::White;
+                fourBitsPiece |= u8(piece.type()) << 1;
+
+                dataEntry.pieces |= fourBitsPiece << (piecesSeen * 4);
+
+                piecesSeen++;
             }
 
-            inputFile >> std::ws;
-            std::getline(inputFile, value, '\n');
+            outputFile.write((char*)(&dataEntry), sizeof(MyDataEntry));
+            ++numProcessedPositions;
 
-            if (key == "fen"sv) e.pos = chess::Position::fromFen(value.c_str());
-            if (key == "move"sv) move = value;
-            if (key == "score"sv) e.score = std::stoi(value);
-            if (key == "ply"sv) e.ply = std::stoi(value);
-            if (key == "result"sv) e.result = std::stoi(value);
+            /*
+            const int bits = std::numeric_limits<u128>::digits;
+            std::bitset<bits> bitset(dataEntry.pieces);
+
+            std::cout << e.pos.fen() << " | " << dataEntry.stmScore << " | " << (int)dataEntry.stmResult 
+                      << " | " << chess::intrin::popcount(dataEntry.occupancy) << " pieces " << bitset.to_string()
+                      << std::endl;
+            */
+
+            if (numProcessedPositions == positionsToConvert)
+                break;
+
+            if (numProcessedPositions % 134'217'728 == 0)
+                std::cout << "Converted " << numProcessedPositions << " positions." << std::endl;
         }
 
-        if (!buffer.empty())
-        {
-            outputFile.write(buffer.data(), buffer.size());
-
-            const auto cur = outputFile.tellp();
-            std::cout << "Processed " << (cur - base) << " bytes and " << numProcessedPositions << " positions.\n";
-        }
-
-        std::cout << "Finished. Converted " << numProcessedPositions << " positions.\n";
+        std::cout << "Finished. Converted " << numProcessedPositions << " positions." << std::endl;
     }
 
     inline void validatePlain(std::string inputPath)
@@ -7986,6 +7767,7 @@ namespace binpack
 
         std::cout << "Finished. Validated " << numProcessedPositions << " positions.\n";
     }
+
 
     inline void validateBinpack(std::string inputPath)
     {

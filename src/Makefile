@@ -543,11 +543,11 @@ endif
 endif
 
 ### 3.2.2 Debugging
-ifeq ($(debug),no)
-	CXXFLAGS += -DNDEBUG
-else
-	CXXFLAGS += -g
-endif
+#ifeq ($(debug),no)
+#	CXXFLAGS += -DNDEBUG
+#else
+#	CXXFLAGS += -g
+#endif
 
 ### 3.2.2 Debugging with undefined behavior sanitizers
 ifneq ($(sanitize),none)
