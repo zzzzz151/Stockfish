@@ -7541,13 +7541,13 @@ namespace binpack
         u64 occupancy;
 
         // 4 bits per piece for a max of 32 pieces
-        // lsb is isWhitePiece
+        // lsb is piece color, other 3 bits is piece type
         u128 pieces;
 
-        u8 ourKingSquare, theirKingSquare;
+        u8 whiteKingSquare, blackKingSquare;
 
         i16 stmScore;
-        i8 stmResult; // -1 = stm lost, 0 = draw, 1 = stm won
+        i8 stmResult; // -1, 0, 1
 
         std::array<u8, 2> extra = {0, 0}; // padding to ensure 32 bytes
 
@@ -7602,20 +7602,18 @@ namespace binpack
             || (chess::intrin::popcount(dataEntry.occupancy) == 3 && numKnightsBishops > 0))
                 continue;
 
-            chess::Color stm = e.pos.sideToMove();
-            chess::Color nstm = stm == chess::Color::White ? chess::Color::Black : chess::Color::White;
+            dataEntry.whiteToMove = e.pos.sideToMove() == chess::Color::White;
 
-            dataEntry.whiteToMove = stm == chess::Color::White;
+            dataEntry.whiteKingSquare = int(e.pos.kingSquare(chess::Color::White));
+            dataEntry.blackKingSquare = int(e.pos.kingSquare(chess::Color::Black));
+
+            assert(dataEntry.whiteKingSquare >= 0 && dataEntry.whiteKingSquare <= 63);
+            assert(dataEntry.blackKingSquare >= 0 && dataEntry.blackKingSquare <= 63);
 
             dataEntry.stmScore = e.score;
-            dataEntry.stmResult = e.result; // -1 = stm lost, 0 = draw, 1 = stm won
-
-            dataEntry.ourKingSquare = int(e.pos.kingSquare(stm));
-            dataEntry.theirKingSquare = int(e.pos.kingSquare(nstm));
+            dataEntry.stmResult = e.result; // -1, 0, 1
 
             assert(dataEntry.stmResult == -1 || dataEntry.stmResult == 0 || dataEntry.stmResult == 1);
-            assert(dataEntry.ourKingSquare >= 0 && dataEntry.ourKingSquare <= 63);
-            assert(dataEntry.theirKingSquare >= 0 && dataEntry.theirKingSquare <= 63);
 
             dataEntry.pieces = 0;
             u64 occ = dataEntry.occupancy;
@@ -7625,7 +7623,7 @@ namespace binpack
                 u8 sq = poplsb(occ);
                 chess::Piece piece = e.pos.pieceAt(chess::Square(sq));
 
-                u128 fourBitsPiece = piece.color() == chess::Color::White;
+                u128 fourBitsPiece = piece.color() == chess::Color::Black;
                 fourBitsPiece |= u8(piece.type()) << 1;
 
                 dataEntry.pieces |= fourBitsPiece << (piecesSeen * 4);
@@ -7635,15 +7633,6 @@ namespace binpack
 
             outputFile.write((char*)(&dataEntry), sizeof(MyDataEntry));
             ++numProcessedPositions;
-
-            /*
-            const int bits = std::numeric_limits<u128>::digits;
-            std::bitset<bits> bitset(dataEntry.pieces);
-
-            std::cout << e.pos.fen() << " | " << dataEntry.stmScore << " | " << (int)dataEntry.stmResult 
-                      << " | " << chess::intrin::popcount(dataEntry.occupancy) << " pieces " << bitset.to_string()
-                      << std::endl;
-            */
 
             if (numProcessedPositions == positionsToConvert)
                 break;
