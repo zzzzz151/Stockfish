@@ -7544,12 +7544,13 @@ namespace binpack
         // lsb is piece color, other 3 bits is piece type
         u128 pieces;
 
-        u8 whiteKingSquare, blackKingSquare;
+        u8 whiteKingSquare, 
+           blackKingSquare,
+           whiteQueenSquare,
+           blackQueenSquare;
 
         i16 stmScore;
         i8 stmResult; // -1, 0, 1
-
-        std::array<u8, 2> extra = {0, 0}; // padding to ensure 32 bytes
 
     } __attribute__((packed));
 
@@ -7587,10 +7588,10 @@ namespace binpack
             assert(chess::intrin::popcount(dataEntry.occupancy) >= 2 && chess::intrin::popcount(dataEntry.occupancy) <= 32);
 
             int numKnightsBishops 
-                = e.pos.pieceCount(chess::Piece(chess::PieceType::Knight, chess::Color::White))
-                + e.pos.pieceCount(chess::Piece(chess::PieceType::Knight, chess::Color::Black))
-                + e.pos.pieceCount(chess::Piece(chess::PieceType::Bishop, chess::Color::White))
-                + e.pos.pieceCount(chess::Piece(chess::PieceType::Bishop, chess::Color::Black));
+                = e.pos.pieceCount(chess::whiteKnight)
+                + e.pos.pieceCount(chess::blackKnight)
+                + e.pos.pieceCount(chess::whiteBishop)
+                + e.pos.pieceCount(chess::blackBishop);
 
             if (e.ply <= (numProcessedPositions % 2 == 0 ? 16 : 17)
             || abs(e.score) > 8000
@@ -7609,6 +7610,15 @@ namespace binpack
 
             assert(dataEntry.whiteKingSquare >= 0 && dataEntry.whiteKingSquare <= 63);
             assert(dataEntry.blackKingSquare >= 0 && dataEntry.blackKingSquare <= 63);
+
+            dataEntry.whiteQueenSquare = e.pos.pieceCount(chess::whiteQueen) != 1 
+                                         ? 64 : int(e.pos.piecesBB(chess::whiteQueen).first());
+
+            dataEntry.blackQueenSquare = e.pos.pieceCount(chess::blackQueen) != 1 
+                                         ? 64 : int(e.pos.piecesBB(chess::blackQueen).first());
+
+            assert(dataEntry.whiteQueenSquare >= 0 && dataEntry.whiteQueenSquare <= 64);
+            assert(dataEntry.blackQueenSquare >= 0 && dataEntry.blackQueenSquare <= 64);
 
             dataEntry.stmScore = e.score;
             dataEntry.stmResult = e.result; // -1, 0, 1
