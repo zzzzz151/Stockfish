@@ -530,16 +530,6 @@ namespace Stockfish::Tools
 
     static ConvertFunctionType* get_convert_function(const std::string& input_path, const std::string& output_path)
     {
-        if (is_convert_of_type(input_path, output_path, plain_extension, bin_extension))
-            return binpack::convertPlainToBin;
-        if (is_convert_of_type(input_path, output_path, plain_extension, binpack_extension))
-            return binpack::convertPlainToBinpack;
-
-        if (is_convert_of_type(input_path, output_path, bin_extension, plain_extension))
-            return binpack::convertBinToPlain;
-        if (is_convert_of_type(input_path, output_path, bin_extension, binpack_extension))
-            return binpack::convertBinToBinpack;
-
         if (is_convert_of_type(input_path, output_path, binpack_extension, plain_extension))
             return binpack::convertBinpackToPlain;
         if (is_convert_of_type(input_path, output_path, binpack_extension, bin_extension))
