@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -88,6 +89,15 @@ Value Eval::evaluate(const Eval::NNUE::Networks&    networks,
     v = std::clamp(v, VALUE_TB_LOSS_IN_MAX_PLY + 1, VALUE_TB_WIN_IN_MAX_PLY - 1);
 
     return v;
+}
+
+std::int16_t Eval::evaluate_pure(const Eval::NNUE::Networks&    networks,
+                                 const Position&                pos,
+                                 Eval::NNUE::AccumulatorCaches& caches)
+{
+    auto [psqt, positional] = networks.big.evaluate(pos, &caches.big);
+    Value nnue              = psqt + positional;
+    return std::clamp<Value>(nnue, -32767, 32767);
 }
 
 // Like evaluate(), but instead of returning a value, it returns

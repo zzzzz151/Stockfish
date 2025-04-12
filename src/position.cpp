@@ -295,6 +295,41 @@ Position& Position::set(const string& fenStr, bool isChess960, StateInfo* si) {
     return *this;
 }
 
+Position& Position::set(StarwayEntry entry, StateInfo* si)
+{
+    std::memset(this, 0, sizeof(Position));
+    std::memset(si, 0, sizeof(StateInfo));
+    st = si;
+
+    // Starway format does not preserve EP square, castling rights,
+    // 50mr counter, or current ply.
+    st->epSquare       = SQ_NONE;
+    st->rule50         = 0;
+    st->castlingRights = 0;
+    gamePly            = 0;
+    chess960           = false;
+
+    sideToMove = entry.isWhiteStm ? WHITE : BLACK;
+
+    // Piece placement
+    auto occ = entry.occupied;
+    while (occ > 0)
+    {
+        const Square       sq         = pop_lsb(occ);
+        const std::uint8_t pieceColor = entry.pieces & 0b1;
+        const std::uint8_t pt         = (entry.pieces & 0b1110) >> 1;
+
+        const Piece piece = static_cast<Piece>(1 + pieceColor * 8 + pt);
+        put_piece(piece, sq);
+
+        entry.pieces >>= 4;
+    }
+
+    set_state();
+    assert(pos_is_ok());
+
+    return *this;
+}
 
 // Helper function used to set castling
 // rights given the corresponding color and the rook starting square.

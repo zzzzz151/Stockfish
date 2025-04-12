@@ -20,6 +20,8 @@
 
 #include <cassert>
 #include <deque>
+#include <fstream>
+#include <iomanip>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -28,6 +30,7 @@
 #include <utility>
 #include <vector>
 
+#include "starway_format.h"
 #include "evaluate.h"
 #include "misc.h"
 #include "nnue/network.h"
@@ -267,6 +270,48 @@ void Engine::load_big_network(const std::string& file) {
       [this, &file](NN::Networks& networks_) { networks_.big.load(binaryDirectory, file); });
     threads.clear();
     threads.ensure_network_replicated();
+}
+
+void Engine::relabel(const std::string& file)
+{
+    std::ifstream is(file, std::ios::binary);
+    std::ofstream os(file + ".out", std::ios::binary);
+
+    if (!is.is_open())
+    {
+        std::cout << "Failed to open input file." << std::endl;
+        return;
+    }
+
+    if (!os.is_open())
+    {
+        std::cout << "Failed to open output file." << std::endl;
+        return;
+    }
+
+    verify_networks();
+
+    sync_cout << "Relabling from starway format file " << std::quoted(file) << " to "
+              << std::quoted(file + ".out") << "..." << sync_endl;
+
+    StarwayEntry currEntry;
+    StateInfo    si;
+    Position     p;
+    auto         caches = std::make_unique<Eval::NNUE::AccumulatorCaches>(*networks);
+
+    size_t entriesRelabeled = 0;
+
+    while (is.read(reinterpret_cast<char*>(&currEntry), sizeof(currEntry)))
+    {
+        p.set(currEntry, &si);
+        currEntry.stmScore = Eval::evaluate_pure(*networks, p, *caches);
+        os.write(reinterpret_cast<const char*>(&currEntry), sizeof(currEntry));
+
+        if ((++entriesRelabeled) % 67'108'864 == 0)
+            std::cout << "Entries relabeled: " << entriesRelabeled << std::endl;
+    }
+
+    std::cout << "Total entries relabeled: " << entriesRelabeled << std::endl;
 }
 
 void Engine::load_small_network(const std::string& file) {

@@ -26,6 +26,7 @@
 #include <string>
 
 #include "bitboard.h"
+#include "starway_format.h"
 #include "nnue/nnue_accumulator.h"
 #include "nnue/nnue_architecture.h"
 #include "types.h"
@@ -92,6 +93,9 @@ class Position {
     Position&   set(const std::string& fenStr, bool isChess960, StateInfo* si);
     Position&   set(const std::string& code, Color c, StateInfo* si);
     std::string fen() const;
+
+    // Starway format input
+    Position& set(StarwayEntry entry, StateInfo* si);
 
     // Position representation
     Bitboard pieces(PieceType pt = ALL_PIECES) const;

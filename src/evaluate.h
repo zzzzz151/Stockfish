@@ -19,6 +19,7 @@
 #ifndef EVALUATE_H_INCLUDED
 #define EVALUATE_H_INCLUDED
 
+#include <cstdint>
 #include <string>
 
 #include "types.h"
@@ -33,7 +34,7 @@ namespace Eval {
 // for the build process (profile-build and fishtest) to work. Do not change the
 // name of the macro or the location where this macro is defined, as it is used
 // in the Makefile/Fishtest.
-#define EvalFileDefaultNameBig "nn-1c0000000000.nnue"
+#define EvalFileDefaultNameBig "nn-84e2983ee6a6.nnue"
 #define EvalFileDefaultNameSmall "nn-37f18f62d772.nnue"
 
 namespace NNUE {
@@ -44,11 +45,18 @@ struct AccumulatorCaches;
 std::string trace(Position& pos, const Eval::NNUE::Networks& networks);
 
 int   simple_eval(const Position& pos, Color c);
+
 bool  use_smallnet(const Position& pos);
+
 Value evaluate(const NNUE::Networks&          networks,
                const Position&                pos,
                Eval::NNUE::AccumulatorCaches& caches,
                int                            optimism);
+
+std::int16_t evaluate_pure(const Eval::NNUE::Networks&    networks,
+                           const Position&                pos,
+                           Eval::NNUE::AccumulatorCaches& caches);
+
 }  // namespace Eval
 
 }  // namespace Stockfish
