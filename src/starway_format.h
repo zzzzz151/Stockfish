@@ -23,24 +23,27 @@
 
 namespace Stockfish {
 
-struct __attribute__((packed)) StarwayEntry
+struct StarwayEntry
 {
 public:
 
-    bool isWhiteStm;
+    // Lsb is set if black to move
+    // Highest 7 bits are halfmove clock
+    std::uint8_t stmAndHalfmoveClock;
 
     std::uint64_t occupied;
 
     // 4 bits per piece for a max of 32 pieces
-    // lsb of the 4 bits is piece color, other 3 bits is piece type
+    // Lsb is set if piece color is black, other 3 bits is piece type (0-5 including both)
     unsigned __int128 pieces;
 
-    std::uint8_t whiteKingSquare, blackKingSquare, whiteQueenSquare, blackQueenSquare;
+    // Kings and queens squares (64 if 0 colored queens, 65 if >1 colored queens)
+    std::uint8_t wkSq, bkSq, wqSq, bqSq;
 
     std::int16_t stmScore;
+    std::int8_t stmResult; // -1, 0, 1
 
-    std::int8_t stmWdl; // -1, 0, 1 for loss, draw, win, respectively
-};
+} __attribute__((packed));
 
 static_assert(sizeof(StarwayEntry) == 32);
 

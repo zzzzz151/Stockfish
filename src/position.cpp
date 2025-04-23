@@ -301,15 +301,13 @@ Position& Position::set(StarwayEntry entry, StateInfo* si)
     std::memset(si, 0, sizeof(StateInfo));
     st = si;
 
-    // Starway format does not preserve EP square, castling rights,
-    // 50mr counter, or current ply.
     st->epSquare       = SQ_NONE;
     st->rule50         = 0;
     st->castlingRights = 0;
     gamePly            = 0;
     chess960           = false;
 
-    sideToMove = entry.isWhiteStm ? WHITE : BLACK;
+    sideToMove = (entry.stmAndHalfmoveClock & 0b1) == 0 ? WHITE : BLACK;
 
     // Piece placement
     auto occ = entry.occupied;
