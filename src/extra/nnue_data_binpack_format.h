@@ -7607,20 +7607,22 @@ namespace binpack
     using i32 = int32_t;
     using i64 = int64_t;
 
-    struct MyDataEntry {
-        public:
+    struct MyDataEntry
+    {
+    public:
 
-        bool whiteToMove;
-        u64 occupancy;
+        // Lsb is set if black to move
+        // Highest 7 bits are halfmove clock
+        u8 stmAndHalfmoveClock;
+
+        u64 occupied;
 
         // 4 bits per piece for a max of 32 pieces
-        // lsb is piece color, other 3 bits is piece type
+        // Lsb is set if piece color is black, other 3 bits is piece type (0-5 including both)
         u128 pieces;
 
-        u8 whiteKingSquare,
-           blackKingSquare,
-           whiteQueenSquare,
-           blackQueenSquare;
+        // Kings and queens squares (64 if 0 colored queens, 65 if >1 colored queens)
+        u8 wkSq, bkSq, wqSq, bqSq;
 
         i16 stmScore;
         i8 stmResult; // -1, 0, 1
@@ -7651,7 +7653,7 @@ namespace binpack
             return idx;
         };
 
-        while (reader.hasNext() && numProcessedPositions < 2'000'000'000)
+        while (reader.hasNext() && numProcessedPositions < 5'000'003'584)
         {
             auto e = reader.next();
             if (validate && !e.isValid())
@@ -7663,39 +7665,47 @@ namespace binpack
             if (!acceptEntry(e))
                 continue;
 
-            dataEntry.whiteToMove = e.pos.sideToMove() == chess::Color::White;
-            dataEntry.occupancy = e.pos.piecesBB().bits();
+            dataEntry.stmAndHalfmoveClock = e.pos.sideToMove() == chess::Color::Black;
+            dataEntry.stmAndHalfmoveClock |= u8(u8(e.pos.rule50Counter()) << 1);
+
+            dataEntry.occupied = e.pos.piecesBB().bits();
+            u64 occ = dataEntry.occupied;
 
             dataEntry.pieces = 0;
-            u64 occ = dataEntry.occupancy;
-            int piecesSeen = 0;
+            u128 piecesSeen = 0;
 
-            while (occ > 0) {
+            while (occ > 0)
+            {
                 const u8 sq = popLsb(occ);
                 const chess::Piece piece = e.pos.pieceAt(chess::Square(sq));
+                const u8 pt = u8(piece.type());
+                assert(pt >= 0 && pt <= 5);
 
                 u128 fourBitsPiece = piece.color() == chess::Color::Black;
-                fourBitsPiece |= u8(piece.type()) << 1;
+                fourBitsPiece |= u128(pt << 1);
 
-                dataEntry.pieces |= fourBitsPiece << (piecesSeen * 4);
+                dataEntry.pieces |= fourBitsPiece << u128(piecesSeen * 4);
 
                 piecesSeen++;
             }
 
-            dataEntry.whiteKingSquare = int(e.pos.kingSquare(chess::Color::White));
-            dataEntry.blackKingSquare = int(e.pos.kingSquare(chess::Color::Black));
+            dataEntry.wkSq = int(e.pos.kingSquare(chess::Color::White));
+            dataEntry.bkSq = int(e.pos.kingSquare(chess::Color::Black));
 
-            assert(dataEntry.whiteKingSquare >= 0 && dataEntry.whiteKingSquare <= 63);
-            assert(dataEntry.blackKingSquare >= 0 && dataEntry.blackKingSquare <= 63);
+            assert(dataEntry.wkSq >= 0 && dataEntry.wkSq <= 63);
+            assert(dataEntry.bkSq >= 0 && dataEntry.bkSq <= 63);
 
-            dataEntry.whiteQueenSquare = e.pos.pieceCount(chess::whiteQueen) != 1
-                                       ? 64 : int(e.pos.piecesBB(chess::whiteQueen).first());
+            dataEntry.wqSq = e.pos.pieceCount(chess::whiteQueen) <= 0
+                           ? 64
+                           : e.pos.pieceCount(chess::whiteQueen) > 1
+                           ? 65
+                           : int(e.pos.piecesBB(chess::whiteQueen).first());
 
-            dataEntry.blackQueenSquare = e.pos.pieceCount(chess::blackQueen) != 1
-                                       ? 64 : int(e.pos.piecesBB(chess::blackQueen).first());
-
-            assert(dataEntry.whiteQueenSquare >= 0 && dataEntry.whiteQueenSquare <= 64);
-            assert(dataEntry.blackQueenSquare >= 0 && dataEntry.blackQueenSquare <= 64);
+            dataEntry.bqSq = e.pos.pieceCount(chess::blackQueen) <= 0
+                           ? 64
+                           : e.pos.pieceCount(chess::blackQueen) > 1
+                           ? 65
+                           : int(e.pos.piecesBB(chess::blackQueen).first());
 
             dataEntry.stmScore = e.score;
             dataEntry.stmResult = e.result; // -1, 0, 1
