@@ -526,29 +526,17 @@ namespace Stockfish::Tools
             && ends_with(output_path, expected_output_extension);
     }
 
-    using ConvertFunctionType = void(std::string inputPath, std::string outputPath, std::ios_base::openmode om, bool validate);
+    using ConvertFunctionType = void(std::string inputPath, std::string outputPath, std::ios_base::openmode om);
 
     static ConvertFunctionType* get_convert_function(const std::string& input_path, const std::string& output_path)
     {
-        if (is_convert_of_type(input_path, output_path, plain_extension, bin_extension))
-            return binpack::convertPlainToBin;
-        if (is_convert_of_type(input_path, output_path, plain_extension, binpack_extension))
-            return binpack::convertPlainToBinpack;
-
-        if (is_convert_of_type(input_path, output_path, bin_extension, plain_extension))
-            return binpack::convertBinToPlain;
-        if (is_convert_of_type(input_path, output_path, bin_extension, binpack_extension))
-            return binpack::convertBinToBinpack;
-
-        if (is_convert_of_type(input_path, output_path, binpack_extension, plain_extension))
-            return binpack::convertBinpackToPlain;
         if (is_convert_of_type(input_path, output_path, binpack_extension, bin_extension))
             return binpack::convertBinpackToBin;
 
         return nullptr;
     }
 
-    static void convert(const std::string& input_path, const std::string& output_path, std::ios_base::openmode om, bool validate)
+    static void convert(const std::string& input_path, const std::string& output_path, std::ios_base::openmode om)
     {
         if(!file_exists(input_path))
         {
@@ -559,7 +547,7 @@ namespace Stockfish::Tools
         auto func = get_convert_function(input_path, output_path);
         if (func != nullptr)
         {
-            func(input_path, output_path, om, validate);
+            func(input_path, output_path, om);
         }
         else
         {
@@ -584,7 +572,7 @@ namespace Stockfish::Tools
             ? std::ios_base::app
             : std::ios_base::trunc;
 
-        convert(args[0], args[1], openmode, validate);
+        convert(args[0], args[1], openmode);
     }
 
     void convert(istringstream& is)

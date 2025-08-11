@@ -1,3 +1,5 @@
+.vscode/
+
 # Files from build
 **/*.o
 **/*.s
